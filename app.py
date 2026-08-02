@@ -1,7 +1,6 @@
 import os
 import asyncio
 import threading
-import time
 from flask import Flask
 from telegram import Bot
 import requests
@@ -16,10 +15,9 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 def hello():
     return "Portfolio Reporter is running!", 200
 
-def scrape_kiwoom_data():
-    """영웅문 웹사이트에서 포트폴리오 데이터 수집 (BeautifulSoup)"""
+def analyze_kiwoom_html():
+    """영웅문 HTML 구조 분석"""
     try:
-        # 영웅문 웹사이트 접속
         url = "https://www.kiwoom.com/h/stock/account"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -30,42 +28,45 @@ def scrape_kiwoom_data():
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # 포트폴리오 데이터 찾기
-        data = soup.find_all('div', class_='portfolio')
+        # 전체 HTML 길이 확인
+        html_length = len(response.text)
         
-        print("✅ 영웅문 데이터 수집 성공!")
-        return True, f"데이터 수집 완료: {len(data)} 항목"
+        # 자산, 수익금 관련 텍스트 찾기
+        text = soup.get_text()
+        
+        # 주요 클래스/ID 찾기
+        divs = soup.find_all('div', limit=20)
+        classes = [div.get('class') for div in divs if div.get('class')]
+        
+        print(f"✅ HTML 분석 완료!")
+        return True, f"HTML 길이: {html_length}자, 발견된 클래스: {len(set(str(c) for c in classes))}"
         
     except Exception as e:
-        print(f"❌ 데이터 수집 실패: {e}")
+        print(f"❌ HTML 분석 실패: {e}")
         return False, f"오류: {str(e)}"
 
 async def send_result(success, message):
-    """Telegram으로 결과 발송"""
     bot = Bot(token=TELEGRAM_TOKEN)
     
     if success:
-        text = f"""✅ 영웅문 웹 스크래핑 성공!
+        text = f"""✅ 영웅문 HTML 분석 성공!
 {message}"""
     else:
-        text = f"""❌ 영웅문 웹 스크래핑 실패
+        text = f"""❌ 영웅문 HTML 분석 실패
 {message}"""
     
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
 
 def background_task():
-    """백그라운드 작업"""
     try:
-        success, message = scrape_kiwoom_data()
+        success, message = analyze_kiwoom_html()
         asyncio.run(send_result(success, message))
     except Exception as e:
         print(f"오류: {e}")
 
 if __name__ == "__main__":
-    # 백그라운드에서 웹 스크래핑 실행
     thread = threading.Thread(target=background_task, daemon=True)
     thread.start()
     
-    # Flask 앱 실행
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
