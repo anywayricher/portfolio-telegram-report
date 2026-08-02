@@ -1,6 +1,7 @@
 import os
 import asyncio
 import threading
+import time
 from datetime import datetime
 from flask import Flask
 from telegram import Bot
@@ -32,33 +33,33 @@ def hello():
     return "Portfolio Reporter is running!", 200
 
 def get_current_prices():
-    """네이버 금융에서 현재가 수집"""
-    prices = {}
+    """테스트용 임시 현재가"""
+    print("[DEBUG] 현재가 수집 시작...")
     
     try:
-        # SK하이닉스
-        response = requests.get('https://finance.naver.com/item/main.naver?code=000660')
-        soup = BeautifulSoup(response.content, 'html.parser')
-        price = soup.find('span', {'class': 'blind'})
-        if price:
-            prices['SK하이닉스'] = int(price.text.replace(',', ''))
+        # 테스트: 고정 가격으로 테스트
+        prices = {
+            'SK하이닉스': 1718000,
+            '삼성전자': 262500,
+            '서진시스템': 33000,
+            'KODEX S&P500': 25485,
+            'KODEX 나스닥100': 29090,
+            'KODEX AI반도체TOP': 52163,
+        }
         
-        # 삼성전자
-        response = requests.get('https://finance.naver.com/item/main.naver?code=005930')
-        soup = BeautifulSoup(response.content, 'html.parser')
-        price = soup.find('span', {'class': 'blind'})
-        if price:
-            prices['삼성전자'] = int(price.text.replace(',', ''))
-        
-        print(f"✅ 현재가 수집 성공: {prices}")
+        print(f"[DEBUG] ✅ 현재가 수집 성공: {prices}")
         return True, prices
         
     except Exception as e:
-        print(f"❌ 현재가 수집 실패: {e}")
+        print(f"[DEBUG] ❌ 현재가 수집 실패: {e}")
+        import traceback
+        traceback.print_exc()
         return False, {}
 
 def calculate_portfolio(prices):
     """포트폴리오 계산"""
+    print("[DEBUG] 포트폴리오 계산 시작...")
+    
     meritz_total = 0
     future_total = 0
     meritz_profit = 0
@@ -81,6 +82,8 @@ def calculate_portfolio(prices):
                 future_total += eval_amount
                 future_profit += profit
     
+    print(f"[DEBUG] ✅ 계산 완료 - 메리츠: {meritz_total}, 미래: {future_total}")
+    
     return {
         'meritz_total': meritz_total,
         'future_total': future_total,
@@ -90,6 +93,8 @@ def calculate_portfolio(prices):
 
 async def send_report(prices, calc):
     """일일 리포트 생성 및 발송"""
+    print("[DEBUG] 리포트 생성 시작...")
+    
     bot = Bot(token=TELEGRAM_TOKEN)
     
     total_asset = calc['meritz_total'] + calc['future_total'] + ACCOUNT_INFO['미래']['현금']
@@ -106,30 +111,39 @@ async def send_report(prices, calc):
 🏦 메리츠증권: {calc['meritz_total']/10000:.0f}만원
    • 원금: 14,100만원
    • 수익금: +{calc['meritz_profit']/10000:.0f}만원
-   • 수익률: +{(calc['meritz_profit']/ACCOUNT_INFO['메리츠']['원금']/10000)*100:.1f}%
 
 🏦 미래에셋증권: {(calc['future_total'] + ACCOUNT_INFO['미래']['현금'])/10000:.0f}만원
    • 원금: 20,000만원
    • 수익금: +{calc['future_profit']/10000:.0f}만원
-   • 수익률: +{(calc['future_profit']/ACCOUNT_INFO['미래']['원금']/10000)*100:.1f}%
    • 현금: 8,606만원"""
     
+    print(f"[DEBUG] Telegram 발송 시작... Token: {TELEGRAM_TOKEN[:20]}...")
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=report)
     print("✅ 리포트 발송 완료!")
 
 def background_task():
     """백그라운드 작업"""
+    print("[DEBUG] 백그라운드 작업 시작!")
+    
     try:
         success, prices = get_current_prices()
         if success:
             calc = calculate_portfolio(prices)
             asyncio.run(send_report(prices, calc))
+        else:
+            print("[DEBUG] 현재가 수집 실패")
     except Exception as e:
-        print(f"오류: {e}")
+        print(f"[DEBUG] ❌ 백그라운드 작업 오류: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
+    print("[DEBUG] Flask 시작 전 - 백그라운드 스레드 실행")
     thread = threading.Thread(target=background_task, daemon=True)
     thread.start()
+    print("[DEBUG] 백그라운드 스레드 생성됨, 2초 대기...")
+    time.sleep(2)
     
     port = int(os.getenv('PORT', 5000))
+    print(f"[DEBUG] Flask 서버 시작 - 포트: {port}")
     app.run(host='0.0.0.0', port=port)
