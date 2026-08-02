@@ -4,10 +4,7 @@ import threading
 import time
 from flask import Flask
 from telegram import Bot
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import requests
 from bs4 import BeautifulSoup
 
 app = Flask(__name__)
@@ -20,29 +17,24 @@ def hello():
     return "Portfolio Reporter is running!", 200
 
 def scrape_kiwoom_data():
-    """영웅문 웹사이트에서 포트폴리오 데이터 수집"""
+    """영웅문 웹사이트에서 포트폴리오 데이터 수집 (BeautifulSoup)"""
     try:
-        # Selenium으로 브라우저 열기
-        options = webdriver.ChromeOptions()
-        options.add_argument('--headless')  # 백그라운드 실행
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
+        # 영웅문 웹사이트 접속
+        url = "https://www.kiwoom.com/h/stock/account"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
         
-        driver = webdriver.Chrome(options=options)
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
         
-        # 영웅문 로그인 페이지
-        driver.get("https://www.kiwoom.com/h/stock/account")
+        soup = BeautifulSoup(response.content, 'html.parser')
         
-        # 페이지 로딩 대기
-        time.sleep(3)
-        
-        # 페이지 HTML 파싱
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        
-        driver.quit()
+        # 포트폴리오 데이터 찾기
+        data = soup.find_all('div', class_='portfolio')
         
         print("✅ 영웅문 데이터 수집 성공!")
-        return True, "데이터 수집 완료"
+        return True, f"데이터 수집 완료: {len(data)} 항목"
         
     except Exception as e:
         print(f"❌ 데이터 수집 실패: {e}")
