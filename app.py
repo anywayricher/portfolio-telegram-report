@@ -1,12 +1,10 @@
 import os
 import asyncio
 import threading
-import time
 from datetime import datetime
 from flask import Flask
 from telegram import Bot
-import requests
-from bs4 import BeautifulSoup
+import yfinance as yf
 
 app = Flask(__name__)
 
@@ -15,12 +13,12 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 # 고정 포트폴리오 데이터
 PORTFOLIO = {
-    'SK하이닉스': {'수량': 50, '평단가': 2870340, '계좌': '메리츠'},
-    '삼성전자': {'수량': 347, '평단가': 351751, '계좌': '메리츠'},
-    '서진시스템': {'수량': 1, '평단가': 57800, '계좌': '메리츠'},
-    'KODEX S&P500': {'수량': 2354, '평단가': 25485, '계좌': '미래'},
-    'KODEX 나스닥100': {'수량': 2062, '평단가': 29090, '계좌': '미래'},
-    'KODEX AI반도체TOP': {'수량': 2465, '평단가': 52163, '계좌': '미래'},
+    'SK하이닉스': {'수량': 50, '평단가': 2870340, '계좌': '메리츠', 'symbol': '000660.KS'},
+    '삼성전자': {'수량': 347, '평단가': 351751, '계좌': '메리츠', 'symbol': '005930.KS'},
+    '서진시스템': {'수량': 1, '평단가': 57800, '계좌': '메리츠', 'symbol': '013570.KS'},
+    'KODEX S&P500': {'수량': 2354, '평단가': 25485, '계좌': '미래', 'symbol': '069500.KS'},
+    'KODEX 나스닥100': {'수량': 2062, '평단가': 29090, '계좌': '미래', 'symbol': '066840.KS'},
+    'KODEX AI반도체TOP': {'수량': 2465, '평단가': 52163, '계좌': '미래', 'symbol': '395160.KS'},
 }
 
 ACCOUNT_INFO = {
@@ -28,25 +26,40 @@ ACCOUNT_INFO = {
     '미래': {'원금': 20000, '현금': 8606}
 }
 
+# 메시지 발송 여부 (중복 방지)
+message_sent_today = False
+
 @app.route('/')
 def hello():
     return "Portfolio Reporter is running!", 200
 
 def get_current_prices():
-    """테스트용 임시 현재가"""
+    """yfinance에서 실시간 현재가 수집"""
     print("[DEBUG] 현재가 수집 시작...")
     
     try:
-        prices = {
-            'SK하이닉스': 1718000,
-            '삼성전자': 262500,
-            '서진시스템': 33000,
-            'KODEX S&P500': 25485,
-            'KODEX 나스닥100': 29090,
-            'KODEX AI반도체TOP': 52163,
-        }
+        prices = {}
         
-        print(f"[DEBUG] ✅ 현재가 수집 성공")
+        for ticker, data in PORTFOLIO.items():
+            symbol = data['symbol']
+            print(f"[DEBUG] {ticker} ({symbol}) 수집 중...")
+            
+            try:
+                stock = yf.Ticker(symbol)
+                current_price = stock.info.get('currentPrice') or stock.info.get('regularMarketPrice')
+                
+                if current_price:
+                    prices[ticker] = int(current_price)
+                    print(f"[DEBUG] {ticker}: {current_price}원")
+                else:
+                    print(f"[DEBUG] {ticker}: 가격 없음, 최근가 사용")
+                    hist = stock.history(period='1d')
+                    if not hist.empty:
+                        prices[ticker] = int(hist['Close'].iloc[-1])
+            except Exception as e:
+                print(f"[DEBUG] {ticker} 수집 실패: {e}")
+        
+        print(f"[DEBUG] ✅ 현재가 수집 완료: {len(prices)}개")
         return True, prices
         
     except Exception as e:
@@ -96,29 +109,16 @@ def calculate_portfolio(prices):
     
     return meritz_data, future_data
 
-async def test_telegram():
-    """Telegram 연결 테스트"""
-    print("[DEBUG] Telegram 테스트 시작...")
-    
-    try:
-        bot = Bot(token=TELEGRAM_TOKEN)
-        print(f"[DEBUG] 토큰: {TELEGRAM_TOKEN[:30]}...")
-        print(f"[DEBUG] Chat ID: {TELEGRAM_CHAT_ID}")
-        
-        test_message = "✅ Render에서 Telegram 테스트 메시지입니다!"
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=test_message)
-        
-        print("✅ Telegram 테스트 성공!")
-        return True
-    except Exception as e:
-        print(f"❌ Telegram 테스트 실패: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
 async def send_report(prices, meritz_data, future_data):
     """일일 리포트 생성 및 발송"""
+    global message_sent_today
+    
     print("[DEBUG] 리포트 생성 시작...")
+    
+    # 이미 오늘 발송했으면 스킵
+    if message_sent_today:
+        print("[DEBUG] 오늘 이미 발송됨 - 중복 방지")
+        return
     
     bot = Bot(token=TELEGRAM_TOKEN)
     
@@ -166,21 +166,16 @@ async def send_report(prices, meritz_data, future_data):
     print(f"[DEBUG] Telegram 발송 시작...")
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=report)
     print("✅ 리포트 발송 완료!")
+    
+    message_sent_today = True
 
 def background_task():
     """백그라운드 작업"""
     print("[DEBUG] 백그라운드 작업 시작!")
     
     try:
-        # 먼저 Telegram 테스트
-        telegram_ok = asyncio.run(test_telegram())
-        
-        if not telegram_ok:
-            print("[DEBUG] Telegram 실패 - 중단")
-            return
-        
         success, prices = get_current_prices()
-        if success:
+        if success and prices:
             meritz_data, future_data = calculate_portfolio(prices)
             asyncio.run(send_report(prices, meritz_data, future_data))
         else:
