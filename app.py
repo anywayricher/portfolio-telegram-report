@@ -3,8 +3,8 @@ import requests
 from telegram import Bot
 from datetime import datetime
 import asyncio
+import time
 
-# 환경 변수에서 토큰과 Chat ID 읽기
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
@@ -19,10 +19,21 @@ async def send_telegram_message():
 💵 현재 수익금: 분석 필요
 📊 현재 수익률: 분석 필요
 
-스크린샷을 업로드해주세요!"""
+✅ 자동 배포 성공!"""
     
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
     print("✅ Telegram 메시지 발송 완료!")
 
+async def main():
+    while True:
+        try:
+            await send_telegram_message()
+            print("메시지 발송 완료. 다음은 내일...")
+        except Exception as e:
+            print(f"오류: {e}")
+        
+        # 24시간 대기
+        await asyncio.sleep(86400)
+
 if __name__ == "__main__":
-    asyncio.run(send_telegram_message())
+    asyncio.run(main())
